@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: Create EC2 using Terraform
+
+"on":
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Select Terraform action"
+        required: true
+        type: choice
+        options:
+          - create
+          - destroy
+
+# GitHub Actions permissions
+permissions:
+  id-token: write
+  contents: read
+
+# Prevent simultaneous Terraform operations on the same state
+concurrency:
+  group: aws-ec2-terraform
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Provision AWS EC2
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    env:
+      TF_IN_AUTOMATION: true
+
+    steps:
+
+      # Step 1: Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # Step 3: Configure AWS credentials using OIDC
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      # Step 4: Verify AWS authentication
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
+
+      # Step 5: Initialize Terraform
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      # Step 6: Check Terraform formatting
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+
+      # Step 7: Validate Terraform configuration
+      - name: Terraform Validate
+        run: terraform validate
+
+      # Step 8: Generate Terraform plan
+      - name: Terraform Plan
+        if: ${{ inputs.action == 'create' }}
+        run: terraform plan -input=false -out=tfplan
+
+      # Step 9: Create AWS infrastructure
+      - name: Terraform Apply
+        if: ${{ inputs.action == 'create' }}
+        run: terraform apply -input=false -auto-approve tfplan
+
+      # Step 10: Display EC2 details
+      - name: EC2 Instance Details
+        if: ${{ inputs.action == 'create' }}
+        run: terraform output
+
+      # Step 11: Destroy AWS infrastructure
+      - name: Terraform Destroy
+        if: ${{ inputs.action == 'destroy' }}
+        run: terraform destroy -input=false -auto-approve
