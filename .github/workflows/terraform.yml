@@ -10,6 +10,7 @@ name: Create EC2 using Terraform
         required: true
         type: choice
         options:
+          - test
           - create
           - destroy
 
