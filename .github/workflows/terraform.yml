@@ -19,7 +19,7 @@ permissions:
   id-token: write
   contents: read
 
-# Prevent simultaneous Terraform operations on the same state
+# Prevent simultaneous Terraform operations
 concurrency:
   group: aws-ec2-terraform
   cancel-in-progress: false
@@ -35,6 +35,7 @@ jobs:
 
     env:
       TF_IN_AUTOMATION: true
+      AWS_REGION: ap-south-1
 
     steps:
 
@@ -46,45 +47,73 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # Step 3: Configure AWS credentials using OIDC
+      # Step 3: Debug GitHub Context
+      - name: Debug GitHub Context
+        run: |
+          echo "================================="
+          echo "GitHub Actions Context"
+          echo "================================="
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Branch: $GITHUB_REF"
+          echo "Event: $GITHUB_EVENT_NAME"
+          echo "Workflow: $GITHUB_WORKFLOW"
+          echo "Actor: $GITHUB_ACTOR"
+          echo "================================="
+
+      # Step 4: Verify AWS Role ARN
+      - name: Verify AWS Role Configuration
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "ERROR: AWS_ROLE_ARN repository variable is missing."
+            exit 1
+          fi
+
+          echo "AWS IAM role ARN is configured."
+
+      # Step 5: Configure AWS credentials using OIDC
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ap-south-1
+          role-session-name: GitHubActionsTerraformSession
 
-      # Step 4: Verify AWS authentication
+      # Step 6: Verify AWS authentication
       - name: Verify AWS Identity
-        run: aws sts get-caller-identity
+        run: |
+          echo "Checking AWS authentication..."
+          aws sts get-caller-identity
 
-      # Step 5: Initialize Terraform
+      # Step 7: Initialize Terraform
       - name: Terraform Init
         run: terraform init -input=false
 
-      # Step 6: Check Terraform formatting
+      # Step 8: Check Terraform formatting
       - name: Terraform Format
         run: terraform fmt -check -recursive
 
-      # Step 7: Validate Terraform configuration
+      # Step 9: Validate Terraform configuration
       - name: Terraform Validate
         run: terraform validate
 
-      # Step 8: Generate Terraform plan
+      # Step 10: Generate Terraform plan
       - name: Terraform Plan
         if: ${{ inputs.action == 'create' }}
         run: terraform plan -input=false -out=tfplan
 
-      # Step 9: Create AWS infrastructure
+      # Step 11: Create AWS infrastructure
       - name: Terraform Apply
         if: ${{ inputs.action == 'create' }}
         run: terraform apply -input=false -auto-approve tfplan
 
-      # Step 10: Display EC2 details
+      # Step 12: Display EC2 details
       - name: EC2 Instance Details
         if: ${{ inputs.action == 'create' }}
         run: terraform output
 
-      # Step 11: Destroy AWS infrastructure
+      # Step 13: Destroy AWS infrastructure
       - name: Terraform Destroy
         if: ${{ inputs.action == 'destroy' }}
         run: terraform destroy -input=false -auto-approve
