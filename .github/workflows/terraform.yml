@@ -72,6 +72,47 @@ jobs:
 
           echo "AWS IAM role ARN is configured."
 
+            # Debug actual GitHub OIDC token claims
+      - name: Debug OIDC Claims
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Requesting GitHub OIDC token..."
+
+          TOKEN_RESPONSE=$(curl -fsS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
+
+          OIDC_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.value')
+
+          if [ -z "$OIDC_TOKEN" ] || [ "$OIDC_TOKEN" = "null" ]; then
+            echo "Failed to obtain OIDC token"
+            exit 1
+          fi
+
+          export OIDC_TOKEN
+
+          python3 - <<'PY'
+          import os
+          import json
+          import base64
+
+          token = os.environ["OIDC_TOKEN"]
+          payload = token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+
+          print("========== OIDC CLAIMS ==========")
+          print("Issuer:     ", claims.get("iss"))
+          print("Audience:   ", claims.get("aud"))
+          print("Subject:    ", claims.get("sub"))
+          print("Repository: ", claims.get("repository"))
+          print("Reference:  ", claims.get("ref"))
+          print("=================================")
+          PY    
+
       # Step 5: Configure AWS credentials using OIDC
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
